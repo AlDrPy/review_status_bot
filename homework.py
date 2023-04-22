@@ -4,8 +4,7 @@ import time
 import requests
 import logging
 import telegram
-from pprint import pprint
-from exceptions import *
+from exceptions import ParseStatusError, APIrequestError, TokenMissingError
 
 from dotenv import load_dotenv
 
@@ -55,7 +54,7 @@ def check_tokens():
 
 def send_message(bot, message):
     """Отправка сообщения в телеграм."""
-    try:    
+    try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logger.debug('Бот отправил сообщение.')
     except telegram.error.TelegramError:
@@ -122,8 +121,7 @@ def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    # timestamp = int(time.time()) - 7 * 24 * 60 * 60  # неделю назад
-    timestamp = 0
+    timestamp = int(time.time()) - 7 * 24 * 60 * 60  # неделю назад
     while True:
         try:
             answer = get_api_answer(timestamp)

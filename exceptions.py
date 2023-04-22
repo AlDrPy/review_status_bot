@@ -1,9 +1,3 @@
-class APIresponseTypeError(Exception):
-    """Исключение для недокуентированного ответа API."""
-
-    pass
-
-
 class APIrequestError(Exception):
     """Ошибка при запросе к API."""
 
