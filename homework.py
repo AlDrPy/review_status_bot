@@ -25,7 +25,7 @@ handler.setFormatter(formatter)
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('HOMEWORK_BOT_TOKEN')
-TELEGRAM_CHAT_ID = 1100385471
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -42,20 +42,24 @@ HOMEWORK_VERDICTS = {
 def check_tokens():
     """Проверка переменных окружения."""
     tokens = {
-        'токен Практикума': PRACTICUM_TOKEN,
-        'токен телеги': TELEGRAM_TOKEN,
-        'номер чата в телеге': TELEGRAM_CHAT_ID
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
     }
     for token, value in tokens.items():
         if not value:
-            message = f'отсутствует переменная окружения: {token}'
+            message = f'отсутствует обязательная переменная окружения: {token}'
             logger.critical(message)
             raise TokenMissingError(message)
 
 
 def send_message(bot, message):
     """Отправка сообщения в телеграм."""
-    pass
+    try:    
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.debug('Бот отправил сообщение.')
+    except telegram.error.TelegramError:
+        logger.error('Не удалось отправить сообщение в ТГ')
 
 
 def get_api_answer(timestamp):
@@ -64,60 +68,79 @@ def get_api_answer(timestamp):
     Возвращает список проверенных домашних заданий в формате JSON,
     преобразованном в типы данных питона.
     """
-    response = requests.get(
-        ENDPOINT,
-        headers=HEADERS,
-        params={'from_date': timestamp}
-    )
+    try:
+        response = requests.get(
+            ENDPOINT,
+            headers=HEADERS,
+            params={'from_date': timestamp}
+        )
+    except requests.RequestException:
+        logger.error('ошибка модуля Requests')
     if response.status_code != 200:
-        raise APIrequestError(
-            'Ошибка при запросе к API, статус ответа: ',
-            response.status_code)
+        message = (f'Ошибка при запросе к API, '
+                   f'статус ответа: {response.status_code}')
+        logger.error(message)
+        raise APIrequestError(message)
     response = response.json()
     return response
 
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
-    check_list = [
-        isinstance(response, dict),
-        response.get('homeworks') is not None,
-        response.get('current_date') is not None,
-    ]
-    for i in check_list:
-        if not i:
-            raise APIresponseTypeError(
-                'ответ API не соответствует документации')
+    message = 'ответ API не соответствует документации'
+    if not isinstance(response, dict):
+        logger.error(message)
+        raise TypeError(message)
+    if 'homeworks' not in response.keys():
+        logger.error(message)
+        raise TypeError(message)
+    if 'current_date' not in response.keys():
+        logger.error(message)
+        raise TypeError(message)
+    if not isinstance(response.get('homeworks'), list):
+        logger.error(message)
+        raise TypeError(message)
+    if not isinstance(response.get('current_date'), int):
+        logger.error(message)
+        raise TypeError(message)
 
 
 def parse_status(homework):
     """Извлекает статус конкретной домашней работы."""
+    if 'homework_name' not in homework:
+        raise ParseStatusError('нет ключа homework_name')
     homework_name = homework.get('homework_name')
     status = homework.get('status')
+    if status not in HOMEWORK_VERDICTS.keys():
+        logger.error('неожиданный статус домашней работы')
+        raise ParseStatusError('неожиданный статус домашней работы')
     verdict = HOMEWORK_VERDICTS.get(status)
-    print(f'Изменился статус проверки работы "{homework_name}". \n{verdict}\n')
-    #   return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
     check_tokens()
-    # bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    # timestamp = int(time.time()) - 30 * 24 * 60 * 60  # месяц назад
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    # timestamp = int(time.time()) - 7 * 24 * 60 * 60  # неделю назад
     timestamp = 0
     while True:
         try:
             answer = get_api_answer(timestamp)
             check_response(answer)
             homework_list = answer.get('homeworks')
-            for homework in homework_list:
-                parse_status(homework)
+            if not homework_list:
+                logger.debug('Список домашек пуст, изменений нет.')
+            else:
+                for homework in homework_list:
+                    info = parse_status(homework)
+                    send_message(bot, info)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
         finally:
             timestamp = answer.get('current_date')
-            print('Спим 600 секунд')
+            logger.debug('Спим 600 секунд')
             time.sleep(RETRY_PERIOD)
 
 
