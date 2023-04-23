@@ -1,11 +1,14 @@
+import json
+import logging
 import os
 import sys
 import time
-import requests
-import logging
-import telegram
-from exceptions import ParseStatusError, APIrequestError, TokenMissingError
+from http import HTTPStatus
 
+import requests
+import telegram
+
+from exceptions import ParseStatusError, APIrequestError, TokenMissingError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -74,33 +77,28 @@ def get_api_answer(timestamp):
             params={'from_date': timestamp}
         )
     except requests.RequestException:
-        logger.error('ошибка модуля Requests')
-    if response.status_code != 200:
+        pass  # Добавил эту обёртку из-за pytest'a. Исключение ловлю в main()
+    if response.status_code != HTTPStatus.OK:
         message = (f'Ошибка при запросе к API, '
                    f'статус ответа: {response.status_code}')
-        logger.error(message)
         raise APIrequestError(message)
-    response = response.json()
-    return response
+    else:
+        response = response.json()
+        return response
 
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
     message = 'ответ API не соответствует документации'
     if not isinstance(response, dict):
-        logger.error(message)
         raise TypeError(message)
-    if 'homeworks' not in response.keys():
-        logger.error(message)
+    if 'homeworks' not in response:
         raise TypeError(message)
-    if 'current_date' not in response.keys():
-        logger.error(message)
+    if 'current_date' not in response:
         raise TypeError(message)
     if not isinstance(response.get('homeworks'), list):
-        logger.error(message)
         raise TypeError(message)
     if not isinstance(response.get('current_date'), int):
-        logger.error(message)
         raise TypeError(message)
 
 
@@ -110,7 +108,7 @@ def parse_status(homework):
         raise ParseStatusError('нет ключа homework_name')
     homework_name = homework.get('homework_name')
     status = homework.get('status')
-    if status not in HOMEWORK_VERDICTS.keys():
+    if status not in HOMEWORK_VERDICTS:
         logger.error('неожиданный статус домашней работы')
         raise ParseStatusError('неожиданный статус домашней работы')
     verdict = HOMEWORK_VERDICTS.get(status)
@@ -122,6 +120,8 @@ def main():
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time()) - 7 * 24 * 60 * 60  # неделю назад
+    message_last_status = ''
+    errors = []
     while True:
         try:
             answer = get_api_answer(timestamp)
@@ -132,12 +132,42 @@ def main():
             else:
                 for homework in homework_list:
                     info = parse_status(homework)
-                    send_message(bot, info)
+                    if message_last_status != info:
+                        send_message(bot, info)
+                    message_last_status = info
+        except requests.RequestException as error:
+            logger.error('ошибка модуля Requests', error)
+            if error not in errors:
+                errors.append(error)
+        except APIrequestError as error:
+            logger.error(error)
+            if error not in errors:
+                errors.append(error)
+        except json.decoder.JSONDecodeError as error:
+            logger.error('Ответ API не в JSON формате')
+            if error not in errors:
+                errors.append(error)
+        except TypeError as error:
+            logger.error(error)
+            if error not in errors:
+                errors.append(error)
+        except ParseStatusError as error:
+            logger.error(error)
+            if error not in errors:
+                errors.append(error)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
+            if error not in errors:
+                errors.append(error)
         finally:
             timestamp = answer.get('current_date')
+            for error in errors:
+                bot.send_message(
+                    TELEGRAM_CHAT_ID,
+                    f'Хьюстон, у нас проблемы: {error}'
+                )
+            errors = []
             logger.debug('Спим 600 секунд')
             time.sleep(RETRY_PERIOD)
 
