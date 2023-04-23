@@ -135,26 +135,31 @@ def main():
                     if message_last_status != info:
                         send_message(bot, info)
                     message_last_status = info
-        except requests.RequestException as error:
-            logger.error('ошибка модуля Requests', error)
-            if error not in errors:
-                errors.append(error)
-        except APIrequestError as error:
-            logger.error(error)
-            if error not in errors:
-                errors.append(error)
-        except json.decoder.JSONDecodeError as error:
-            logger.error('Ответ API не в JSON формате')
-            if error not in errors:
-                errors.append(error)
-        except TypeError as error:
-            logger.error(error)
-            if error not in errors:
-                errors.append(error)
-        except ParseStatusError as error:
-            logger.error(error)
-            if error not in errors:
-                errors.append(error)
+        # except requests.RequestException as error:
+        #     logger.error('ошибка модуля Requests', error)
+        #     if error not in errors:
+        #         errors.append(error)
+        # except APIrequestError as error:
+        #     logger.error(error)
+        #     if error not in errors:
+        #         errors.append(error)
+        # except json.decoder.JSONDecodeError as error:
+        #     logger.error('Ответ API не в JSON формате')
+        #     if error not in errors:
+        #         errors.append(error)
+        # except TypeError as error:
+        #     logger.error(error)
+        #     if error not in errors:
+        #         errors.append(error)
+        # except ParseStatusError as error:
+        #     logger.error(error)
+        #     if error not in errors:
+        #         errors.append(error)
+        #
+        # Я учёл здесь комментарии ревью, но пришлось убрать эти блоки кода
+        # из-за ошибки flake-8, "main() is too complex".
+        # Все ошибки теперь ловятся в общем блоке:
+        #
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
