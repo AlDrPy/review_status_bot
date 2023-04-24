@@ -1,14 +1,15 @@
+import json
 import logging
 import os
 import sys
 import time
 from http import HTTPStatus
 
+from dotenv import load_dotenv
 import requests
 import telegram
 
 from exceptions import ParseStatusError, APIrequestError, TokenMissingError
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -76,14 +77,16 @@ def get_api_answer(timestamp):
             params={'from_date': timestamp}
         )
     except requests.RequestException:
-        pass  # Добавил эту обёртку из-за pytest'a. Исключение ловлю в main()
+        raise APIrequestError('Ошибка модуля requests')
     if response.status_code != HTTPStatus.OK:
         message = (f'Ошибка при запросе к API, '
                    f'статус ответа: {response.status_code}')
         raise APIrequestError(message)
-    else:
+    try:
         response = response.json()
-        return response
+    except json.decoder.JSONDecodeError:
+        raise APIrequestError('Ответ API не в JSON формате')
+    return response
 
 
 def check_response(response):
